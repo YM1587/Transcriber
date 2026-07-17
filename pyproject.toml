@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "free-transcriber"
+version = "1.0.0"
+authors = [
+  { name="Eugine", email="eugine@example.com" },
+]
+description = "100% offline speech-to-text transcriber with streaming partials and speaker diarization."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+dependencies = [
+    "faster-whisper>=1.0.3",
+    "soundfile>=0.12.1",
+    "numpy>=1.24",
+    "librosa>=0.10.0",
+    "scikit-learn>=1.3.0",
+    "gradio>=4.0.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/yourusername/transcriber"
+"Bug Tracker" = "https://github.com/yourusername/transcriber/issues"
+
+[project.optional-dependencies]
+cli = [
+    "pyannote.audio",
+    "torch"
+]
+build = [
+    "pyinstaller>=6.0.0"
+]
+
+[project.scripts]
+transcriber-web = "app:demo.launch"
