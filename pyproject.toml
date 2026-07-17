@@ -42,3 +42,6 @@ build = [
 
 [project.scripts]
 transcriber-web = "app:demo.launch"
+
+[tool.setuptools]
+py-modules = ["app", "transcribe_diarize", "build"]

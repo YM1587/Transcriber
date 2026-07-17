@@ -25,7 +25,9 @@ def build_executable():
 
     # PyInstaller build arguments
     args = [
-        "pyinstaller",
+        sys.executable,
+        "-m",
+        "PyInstaller",
         "--name=FreeTranscriber",
         "--noconfirm",          # Overwrite output directory without confirming
         "--clean",              # Clean PyInstaller cache
