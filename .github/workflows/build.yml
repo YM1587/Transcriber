@@ -1,0 +1,59 @@
+name: Build Standalone Executables
+
+on:
+  workflow_dispatch:  # Allows you to trigger the build manually from the Actions tab
+  release:
+    types: [created]  # Automatically runs when you publish a new Release on GitHub
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        # This will run three parallel jobs, one for each OS
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: pip install .[build]
+
+      - name: Build Executable
+        run: python build.py
+
+      - name: Zip Output (Windows)
+        if: runner.os == 'Windows'
+        run: Compress-Archive -Path dist\FreeTranscriber -DestinationPath FreeTranscriber-Windows.zip
+
+      - name: Zip Output (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cd dist
+          zip -r ../FreeTranscriber-macOS.zip FreeTranscriber/
+
+      - name: Zip Output (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cd dist
+          zip -r ../FreeTranscriber-Linux.zip FreeTranscriber/
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: FreeTranscriber-${{ runner.os }}
+          path: FreeTranscriber-*.zip
+          
+      - name: Attach to GitHub Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: FreeTranscriber-*.zip
