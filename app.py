@@ -314,10 +314,11 @@ def diarize_mfcc(wav_path: str, whisper_segments, num_speakers: Optional[int] = 
             continue
         # Extract MFCCs
         mfcc = librosa.feature.mfcc(y=chunk, sr=SR, n_mfcc=N_MFCC)
-        # Exclude MFCC 0 (index 0) because it correlates with volume/loudness
-        # rather than speaker identity characteristics.
+        # Exclude MFCC 0 (index 0) because it correlates with volume/loudness.
         mfcc_feat = mfcc[1:]
-        emb = np.concatenate([np.mean(mfcc_feat, axis=1), np.std(mfcc_feat, axis=1)])
+        # Use only the mean of the MFCCs across the segment. Standard deviations
+        # introduce intra-segment noise (like brief pauses) that confuses clustering.
+        emb = np.mean(mfcc_feat, axis=1)
         embeddings.append(emb)
         valid_segs.append(seg)
 
@@ -332,7 +333,7 @@ def diarize_mfcc(wav_path: str, whisper_segments, num_speakers: Optional[int] = 
 
     if n is None:
         # Determine the number of speakers automatically using the Silhouette Coefficient
-        max_k = min(8, len(X) - 1)
+        max_k = min(5, len(X) - 1)
         if max_k < 2:
             n_clusters = 1
         else:
@@ -350,8 +351,9 @@ def diarize_mfcc(wav_path: str, whisper_segments, num_speakers: Optional[int] = 
                     best_score = score
                     best_k = k
             
-            # If the best clustering has very low silhouette score, assume a single speaker
-            if best_score < 0.15:
+            # Real-world MFCC embeddings can be noisy, lowering silhouette scores.
+            # A very low threshold safely defaults to 1 speaker only when there's truly no separation.
+            if best_score < 0.04:
                 n_clusters = 1
             else:
                 n_clusters = best_k
