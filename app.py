@@ -283,16 +283,17 @@ def render_with_speakers(segs, diar_segs) -> str:
 def diarize_mfcc(wav_path: str, whisper_segments, num_speakers: Optional[int] = None):
     """Speaker diarization using MFCC embeddings + agglomerative clustering.
 
-    Improvements over original:
-      - reads WAV via soundfile (no librosa resample/normalize waste)
-      - skips tiny segments (<0.3s) as before
-      - adaptive fallback: if a single auto cluster collapses everything
-        together, retry with a tighter threshold so multi-speaker audio
-        doesn't get labelled as one voice.
+    Improvements:
+      - Reads WAV via soundfile (no librosa resample/normalize waste)
+      - Skips tiny segments (<0.3s)
+      - Excludes MFCC 0 to reduce energy/loudness bias
+      - Dynamically finds optimal cluster count via Silhouette Coefficient
+      - Gracefully falls back to 1 speaker if Silhouette Score is low (<0.15)
     """
     import librosa
     from sklearn.cluster import AgglomerativeClustering
     from sklearn.preprocessing import StandardScaler
+    from sklearn.metrics import silhouette_score
 
     SR = Config.SR
     N_MFCC = 20
@@ -311,8 +312,12 @@ def diarize_mfcc(wav_path: str, whisper_segments, num_speakers: Optional[int] = 
         chunk = y[start_i:end_i]
         if len(chunk) < int(MIN_DURATION * SR):
             continue
+        # Extract MFCCs
         mfcc = librosa.feature.mfcc(y=chunk, sr=SR, n_mfcc=N_MFCC)
-        emb = np.concatenate([np.mean(mfcc, axis=1), np.std(mfcc, axis=1)])
+        # Exclude MFCC 0 (index 0) because it correlates with volume/loudness
+        # rather than speaker identity characteristics.
+        mfcc_feat = mfcc[1:]
+        emb = np.concatenate([np.mean(mfcc_feat, axis=1), np.std(mfcc_feat, axis=1)])
         embeddings.append(emb)
         valid_segs.append(seg)
 
@@ -325,20 +330,43 @@ def diarize_mfcc(wav_path: str, whisper_segments, num_speakers: Optional[int] = 
 
     n = int(num_speakers) if num_speakers and int(num_speakers) > 1 else None
 
-    def _cluster(threshold):
+    if n is None:
+        # Determine the number of speakers automatically using the Silhouette Coefficient
+        max_k = min(8, len(X) - 1)
+        if max_k < 2:
+            n_clusters = 1
+        else:
+            best_score = -1
+            best_k = 1
+            for k in range(2, max_k + 1):
+                clustering = AgglomerativeClustering(
+                    n_clusters=k,
+                    metric="euclidean",
+                    linkage="ward",
+                )
+                cluster_labels = clustering.fit_predict(X)
+                score = silhouette_score(X, cluster_labels)
+                if score > best_score:
+                    best_score = score
+                    best_k = k
+            
+            # If the best clustering has very low silhouette score, assume a single speaker
+            if best_score < 0.15:
+                n_clusters = 1
+            else:
+                n_clusters = best_k
+    else:
+        n_clusters = n
+
+    if n_clusters <= 1:
+        labels = np.zeros(len(X), dtype=int)
+    else:
         clustering = AgglomerativeClustering(
-            n_clusters=n,
-            distance_threshold=None if n else threshold,
+            n_clusters=n_clusters,
             metric="euclidean",
             linkage="ward",
         )
-        return clustering.fit_predict(X)
-
-    labels = _cluster(12.0)
-    # Auto fallback: if everything collapsed to one speaker but we clearly have
-    # multiple talkers, tighten the threshold and retry once.
-    if n is None and len(set(labels)) == 1 and len(valid_segs) >= 3:
-        labels = _cluster(6.0)
+        labels = clustering.fit_predict(X)
 
     return [(seg.start, seg.end, f"SPEAKER_{label:02d}")
             for seg, label in zip(valid_segs, labels)]
